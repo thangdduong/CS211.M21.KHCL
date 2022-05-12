@@ -15,6 +15,7 @@ from torch import nn
 
 import msgpack
 
+from baselines_wrappers.subproc_vec_env import SubprocVecEnv
 from torch.utils.tensorboard import SummaryWriter
 from msgpack_numpy import patch as msgpack_numpy_patch
 from baselines_wrappers import DummyVecEnv, vec_env
@@ -29,7 +30,7 @@ parser.add_argument('--network_type', default="vanilla", type=str)
 parser.add_argument('--buffer_size', default=float(1e4), type=float)
 parser.add_argument('--batch_size', default=32, type=int)
 parser.add_argument('--lr', default=5e-5, type=float)
-parser.add_argument('--save_path', default="./atari_model_pack", type=str)
+parser.add_argument('--save_dir', default="./atari_model_pack", type=str)
 parser.add_argument('--log_dir', default="./logs/atari_vanilla", type=str)
 parser.add_argument('--game_to_play', default="BreakoutNoFrameskip-v4", type=str)
 
@@ -41,16 +42,20 @@ BUFFER_SIZE = int(args.buffer_size)
 MIN_REPLAY_SIZE = 50000
 EPSILON_START = 1.0
 EPSILON_END = 0.1
-EPSILON_DECAY = int(1e6)
+EPSILON_DECAY = int(1e6)    
 NUM_ENVS = 4
 TARGET_UPDATE_FREQ = 10000 // NUM_ENVS
 LR = args.lr
-SAVE_PATH = args.save_path
+SAVE_DIR = args.save_dir
 SAVE_INTERVAL = 10000
 LOG_DIR = args.log_dir
 LOG_INTERVAL = 1000 
 NETWORK_TYPE = args.network_type
 GAME_TO_PLAY = args.game_to_play
+
+if not os.path.exists(SAVE_DIR):
+    os.makedirs(SAVE_DIR)
+
 
 def nature_cnn(observation_space, depths=(32, 64, 64), final_layer=512):
     n_input_channels = observation_space.shape[0]
@@ -110,19 +115,19 @@ class Network(nn.Module):
 
     def compute_loss(self, transitions, target_net):
         obses = [t[0] for t in transitions]
-        actions = np.asarray([t[1] for t in transitions])
-        rews = np.asarray([t[2] for t in transitions])
-        dones = np.asarray([t[3] for t in transitions])
+        actions = np.asarray([t[1] for t in transitions], dtype=torch.int64)
+        rews = np.asarray([t[2] for t in transitions], dtype=torch.float32)
+        dones = np.asarray([t[3] for t in transitions], dtype=torch.float32)
         new_obses = [t[4] for t in transitions]
 
         if isinstance(obses[0], PytorchLazyFrames):
             obses = np.stack([o.get_frames() for o in obses])
             new_obses = np.stack([o.get_frames() for o in new_obses])
         else:
-            obses = np.asarray(obses)
-            new_obses = np.asarray(new_obses)
+            obses = np.asarray(obses, dtype=torch.float32)
+            new_obses = np.asarray(new_obses, dtype=torch.float32)
 
-        actions = online_net.act(obses, epsilon)
+        # actions = online_net.act(obses, epsilon)
 
         obses_t = torch.as_tensor(obses, dtype=torch.float32, device=self.device)
         actions_t = torch.as_tensor(actions, dtype=torch.int64, device=self.device).unsqueeze(-1)
@@ -235,7 +240,7 @@ device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 make_env = lambda: Monitor(make_atari_deepmind(GAME_TO_PLAY, scale_values=True), allow_early_resets=True)
 
 vec_env = DummyVecEnv([make_env for _ in range(NUM_ENVS)])
-#env = SubprocVecEnv([make_env for _ in NUM_ENVS])
+#vec_env = SubprocVecEnv([make_env for _ in range(NUM_ENVS)])
 
 env = BatchedPytorchFrameStack(vec_env, k=4)
 
@@ -279,7 +284,7 @@ obses = env.reset()
 for step in itertools.count():
     epsilon = np.interp(step * NUM_ENVS, [0, EPSILON_DECAY], [EPSILON_START, EPSILON_END])
 
-    rnd_sample = random.random()
+    #rnd_sample = random.random()
 
     if isinstance(obses[0], PytorchLazyFrames):
         act_obses = np.stack([o.get_frames() for o in obses])
@@ -325,7 +330,7 @@ for step in itertools.count():
 
     # Update Target Net
     if step % TARGET_UPDATE_FREQ == 0:
-        target_net.load_state_dict(online_net.state_dict())
+        target_net.load_state_dinct(online_net.state_dict())
 
     # Logging
     if step % LOG_INTERVAL == 0:
@@ -343,7 +348,8 @@ for step in itertools.count():
 
     if step % SAVE_INTERVAL == 0 and step != 0:
         print("Saving...")
-        online_net.save(SAVE_PATH)
+        save_path = os.path.join(SAVE_DIR, f"model_step_{step}.pack")
+        online_net.save(save_path)
 
 
 
