@@ -10,6 +10,7 @@ import numpy as np
 import torch
 import os
 import argparse
+#from torchsummary import summary
 
 from torch import nn
 
@@ -72,6 +73,27 @@ def nature_cnn(observation_space, depths=(32, 64, 64), final_layer=512):
 
     return out
 
+def dueling_cnn(observation_space, depths=(32, 64, 64), final_layer=512):
+    n_input_channels = observation_space.shape[0]
+
+    cnn = nn.Sequential(
+        nn.Conv2d(n_input_channels, depths[0], kernel_size=8, stride=4),
+        nn.ReLU(),
+        nn.Conv2d(depths[0], depths[1], kernel_size=4, stride=2),
+        nn.ReLU(),
+        nn.Conv2d(depths[1], depths[2], kernel_size=3, stride=1),
+        nn.ReLU(),
+        nn.Flatten()
+    )
+
+    with torch.no_grad():
+        n_flatten = cnn(torch.as_tensor(observation_space.sample()[None]).float()).shape[1]
+    
+    out = nn.Sequential(cnn, nn.Linear(n_flatten, final_layer), nn.ReLU())
+
+    return out
+
+
 class Network(nn.Module):
     def __init__(self, env, device, network_type="vanilla"):
         super().__init__()
@@ -83,12 +105,34 @@ class Network(nn.Module):
 
         #in_features = int(np.prod(env.observation_space.shape))
 
-        conv_net = nature_cnn(env.observation_space)
+        self.conv_net = nature_cnn(env.observation_space)
 
-        self.net = nn.Sequential(conv_net, nn.Linear(512, self.num_actions))
+        self.fc_value = nn.Sequential(
+            self.conv_net,
+            nn.Linear(512, 1),
+        )
+        self.fc_adv = nn.Sequential(
+            self.conv_net,
+            nn.Linear(512, self.num_actions),
+        )
+
+        self.vanilla_net = nn.Sequential(
+            self.conv_net, 
+            nn.Linear(512, self.num_actions)
+        )
 
     def forward(self, x):
-        return self.net(x)
+        if self.network_type == "dueling":
+
+            value = self.fc_value(x)
+            adv = self.fc_adv(x)
+            advAverage = torch.mean(adv, dim=1, keepdim=True)
+
+            Q = value + adv - advAverage
+
+            return Q
+        else:
+            return self.vanilla_net(x)
 
     def act(self, obses, epsilon):
         obses_t = torch.as_tensor(obses, dtype=torch.float32, device=self.device)
