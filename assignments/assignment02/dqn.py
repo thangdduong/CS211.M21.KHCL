@@ -31,6 +31,7 @@ parser.add_argument('--batch_size', default=32, type=int)
 parser.add_argument('--lr', default=5e-5, type=float)
 parser.add_argument('--save_path', default="./atari_model_pack", type=str)
 parser.add_argument('--log_dir', default="./logs/atari_vanilla", type=str)
+parser.add_argument('--game_to_play', default="BreakoutNoFrameskip-v4", type=str)
 
 args = parser.parse_args()
 
@@ -49,6 +50,7 @@ SAVE_INTERVAL = 10000
 LOG_DIR = args.log_dir
 LOG_INTERVAL = 1000 
 NETWORK_TYPE = args.network_type
+GAME_TO_PLAY = args.game_to_play
 
 def nature_cnn(observation_space, depths=(32, 64, 64), final_layer=512):
     n_input_channels = observation_space.shape[0]
@@ -169,7 +171,7 @@ class Network(nn.Module):
         self.load_state_dict(params)
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-make_env = lambda: Monitor(make_atari_deepmind('BreakoutNoFrameskip-v4', scale_values=True), allow_early_resets=True)
+make_env = lambda: Monitor(make_atari_deepmind(GAME_TO_PLAY, scale_values=True), allow_early_resets=True)
 
 vec_env = DummyVecEnv([make_env for _ in range(NUM_ENVS)])
 #env = SubprocVecEnv([make_env for _ in NUM_ENVS])
