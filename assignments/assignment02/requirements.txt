@@ -19,7 +19,7 @@ lxml==4.8.0
 Markdown==3.3.6
 msgpack==1.0.2
 nltk==3.7
-numpy==1.22.3
+numpy
 oauthlib==3.2.0
 opencv-python==4.5.5.64
 protobuf==3.20.1
