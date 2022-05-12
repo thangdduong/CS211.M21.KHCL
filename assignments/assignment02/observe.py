@@ -84,7 +84,7 @@ net = net.to(device)
 
 net.load('./atari_model.pack')
 
-obs = env.reset()
+obs = env.reset() 
 beginning_episode = True
 for t in itertools.count():
     if isinstance(obs[0], PytorchLazyFrames):
