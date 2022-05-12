@@ -9,6 +9,7 @@ import gym
 import numpy as np
 import torch
 import os
+import argparse
 
 from torch import nn
 
@@ -23,20 +24,31 @@ from pytorch_wrappers import BatchedPytorchFrameStack, PytorchLazyFrames, make_a
 
 msgpack_numpy_patch()
 
+parser = argparse.ArgumentParser(description="parameters for training")
+parser.add_argument('--network_type', default="vanilla", type=str)
+parser.add_argument('--buffer_size', default=float(1e4), type=float)
+parser.add_argument('--batch_size', default=32, type=int)
+parser.add_argument('--lr', default=5e-5, type=float)
+parser.add_argument('--save_path', default="./atari_model_pack", type=str)
+parser.add_argument('--log_dir', default="./logs/atari_vanilla", type=str)
+
+args = parser.parse_args()
+
 GAMMA = 0.99
-BATCH_SIZE = 32
-BUFFER_SIZE = int(1e6)
+BATCH_SIZE = args.batch_size
+BUFFER_SIZE = int(args.buffer_size)
 MIN_REPLAY_SIZE = 50000
 EPSILON_START = 1.0
 EPSILON_END = 0.1
 EPSILON_DECAY = int(1e6)
 NUM_ENVS = 4
 TARGET_UPDATE_FREQ = 10000 // NUM_ENVS
-LR = 5e-5
-SAVE_PATH = './atari_model_pack'
+LR = args.lr
+SAVE_PATH = args.save_path
 SAVE_INTERVAL = 10000
-LOG_DIR = './logs/atari_vanilla'
+LOG_DIR = args.log_dir
 LOG_INTERVAL = 1000 
+NETWORK_TYPE = args.network_type
 
 def nature_cnn(observation_space, depths=(32, 64, 64), final_layer=512):
     n_input_channels = observation_space.shape[0]
@@ -59,12 +71,13 @@ def nature_cnn(observation_space, depths=(32, 64, 64), final_layer=512):
     return out
 
 class Network(nn.Module):
-    def __init__(self, env, device):
+    def __init__(self, env, device, network_type="vanilla"):
         super().__init__()
 
         self.num_actions = env.action_space.n
 
         self.device = device
+        self.network_type = network_type
 
         #in_features = int(np.prod(env.observation_space.shape))
 
@@ -113,10 +126,20 @@ class Network(nn.Module):
 
         # Compute Targets
         # targets = r + gamma * target q vals * (1 - dones)
-        target_q_values = target_net(new_obses_t)
-        max_target_q_values = target_q_values.max(dim=1, keepdim=True)[0]
+        with torch.no_grad():
+            if self.network_type == 'double':
+                targets_online_q_values = self(new_obses_t)
+                targets_online_best_q_indices = targets_online_q_values.argmax(dim=1, keepdim=True)
 
-        targets = rews_t + GAMMA * (1 - dones_t) * max_target_q_values
+                targets_target_q_values = target_net(new_obses_t)
+                target_selected_q_values = torch.gather(input=targets_target_q_values, dim=1, index=targets_online_best_q_indices)
+
+                targets = rews_t + GAMMA * (1 - dones_t) * target_selected_q_values
+            else:
+                target_q_values = target_net(new_obses_t)
+                max_target_q_values = target_q_values.max(dim=1, keepdim=True)[0]
+
+                targets = rews_t + GAMMA * (1 - dones_t) * max_target_q_values
 
         # Compute Loss
         q_values = self(obses_t)
@@ -160,8 +183,8 @@ episode_count = 0
 
 summary_writer = SummaryWriter(LOG_DIR)
 
-online_net = Network(env, device=device)
-target_net = Network(env, device=device)
+online_net = Network(env, device=device, network_type=NETWORK_TYPE)
+target_net = Network(env, device=device, network_type=NETWORK_TYPE)
 
 online_net = online_net.to(device)
 target_net = target_net.to(device)
