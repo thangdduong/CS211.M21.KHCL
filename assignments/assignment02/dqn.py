@@ -1,6 +1,5 @@
 import itertools
 import cv2
-from lib2to3.pytree import convert
 import random
 from collections import deque
 from re import S
@@ -73,26 +72,6 @@ def nature_cnn(observation_space, depths=(32, 64, 64), final_layer=512):
 
     return out
 
-def dueling_cnn(observation_space, depths=(32, 64, 64), final_layer=512):
-    n_input_channels = observation_space.shape[0]
-
-    cnn = nn.Sequential(
-        nn.Conv2d(n_input_channels, depths[0], kernel_size=8, stride=4),
-        nn.ReLU(),
-        nn.Conv2d(depths[0], depths[1], kernel_size=4, stride=2),
-        nn.ReLU(),
-        nn.Conv2d(depths[1], depths[2], kernel_size=3, stride=1),
-        nn.ReLU(),
-        nn.Flatten()
-    )
-
-    with torch.no_grad():
-        n_flatten = cnn(torch.as_tensor(observation_space.sample()[None]).float()).shape[1]
-    
-    out = nn.Sequential(cnn, nn.Linear(n_flatten, final_layer), nn.ReLU())
-
-    return out
-
 
 class Network(nn.Module):
     def __init__(self, env, device, network_type="vanilla"):
@@ -107,32 +86,13 @@ class Network(nn.Module):
 
         self.conv_net = nature_cnn(env.observation_space)
 
-        self.fc_value = nn.Sequential(
-            self.conv_net,
-            nn.Linear(512, 1),
-        )
-        self.fc_adv = nn.Sequential(
-            self.conv_net,
-            nn.Linear(512, self.num_actions),
-        )
-
-        self.vanilla_net = nn.Sequential(
+        self.net = nn.Sequential(
             self.conv_net, 
             nn.Linear(512, self.num_actions)
         )
 
     def forward(self, x):
-        if self.network_type == "dueling":
-
-            value = self.fc_value(x)
-            adv = self.fc_adv(x)
-            advAverage = torch.mean(adv, dim=1, keepdim=True)
-
-            Q = value + adv - advAverage
-
-            return Q
-        else:
-            return self.vanilla_net(x)
+        return self.net(x)
 
     def act(self, obses, epsilon):
         obses_t = torch.as_tensor(obses, dtype=torch.float32, device=self.device)
@@ -214,6 +174,63 @@ class Network(nn.Module):
 
         self.load_state_dict(params)
 
+class DuelingNetwork(Network):
+    def __init__(self, env, device, network_type="dueling"):
+        super().__init__(env, device, network_type)
+
+        self.num_actions = env.action_space.n
+
+        self.device = device
+
+        self.network_type = network_type
+
+        self.depths = (32, 64, 64)
+
+        self.final_layer = 512
+
+        n_input_channels = env.observation_space.shape[0]
+
+        self.cnn = nn.Sequential(
+            nn.Conv2d(n_input_channels, self.depths[0], kernel_size=8, stride=4),
+            nn.ReLU(),
+            nn.Conv2d(self.depths[0], self.depths[1], kernel_size=4, stride=2),
+            nn.ReLU(),
+            nn.Conv2d(self.depths[1], self.depths[2], kernel_size=3, stride=1),
+            nn.ReLU(),
+            nn.Flatten()
+        )
+
+        with torch.no_grad():
+            n_flatten = self.cnn(torch.as_tensor(env.observation_space.sample()[None]).float()).shape[1]
+
+        self.fc_value = nn.Sequential(
+            nn.Linear(n_flatten, self.final_layer),
+            nn.ReLU()
+        )
+        self.fc_adv = nn.Sequential(
+            nn.Linear(n_flatten, self.final_layer),
+            nn.ReLU()
+        )
+
+        self.value_final = nn.Linear(self.final_layer, 1)
+        self.adv_final = nn.Linear(self.final_layer, self.num_actions)
+
+    def forward(self, x):
+        x = self.cnn(x)
+
+        value = self.fc_value(x)
+        adv = self.fc_adv(x)
+
+        value = self.value_final(value)
+        adv = self.adv_final(adv)
+
+        advAverage = torch.mean(adv, dim=1, keepdim=True)
+
+        Q = value + adv - advAverage
+
+        return Q
+
+
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 make_env = lambda: Monitor(make_atari_deepmind(GAME_TO_PLAY, scale_values=True), allow_early_resets=True)
 
@@ -229,8 +246,12 @@ episode_count = 0
 
 summary_writer = SummaryWriter(LOG_DIR)
 
-online_net = Network(env, device=device, network_type=NETWORK_TYPE)
-target_net = Network(env, device=device, network_type=NETWORK_TYPE)
+if NETWORK_TYPE == "dueling":
+    online_net = DuelingNetwork(env, device=device, network_type=NETWORK_TYPE)
+    target_net = DuelingNetwork(env, device=device, network_type=NETWORK_TYPE)
+else:
+    online_net = Network(env, device=device, network_type=NETWORK_TYPE)
+    target_net = Network(env, device=device, network_type=NETWORK_TYPE)
 
 online_net = online_net.to(device)
 target_net = target_net.to(device)
