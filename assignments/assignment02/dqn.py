@@ -115,17 +115,17 @@ class Network(nn.Module):
 
     def compute_loss(self, transitions, target_net):
         obses = [t[0] for t in transitions]
-        actions = np.asarray([t[1] for t in transitions], dtype=torch.int64)
-        rews = np.asarray([t[2] for t in transitions], dtype=torch.float32)
-        dones = np.asarray([t[3] for t in transitions], dtype=torch.float32)
+        actions = np.asarray([t[1] for t in transitions])
+        rews = np.asarray([t[2] for t in transitions])
+        dones = np.asarray([t[3] for t in transitions])
         new_obses = [t[4] for t in transitions]
 
         if isinstance(obses[0], PytorchLazyFrames):
             obses = np.stack([o.get_frames() for o in obses])
             new_obses = np.stack([o.get_frames() for o in new_obses])
         else:
-            obses = np.asarray(obses, dtype=torch.float32)
-            new_obses = np.asarray(new_obses, dtype=torch.float32)
+            obses = np.asarray(obses)
+            new_obses = np.asarray(new_obses)
 
         # actions = online_net.act(obses, epsilon)
 
