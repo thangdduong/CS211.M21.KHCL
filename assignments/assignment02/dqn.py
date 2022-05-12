@@ -330,7 +330,7 @@ for step in itertools.count():
 
     # Update Target Net
     if step % TARGET_UPDATE_FREQ == 0:
-        target_net.load_state_dinct(online_net.state_dict())
+        target_net.load_state_dict(online_net.state_dict())
 
     # Logging
     if step % LOG_INTERVAL == 0:
