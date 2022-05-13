@@ -39,9 +39,9 @@ class Network(nn.Module):
         self.num_actions = env.action_space.n
         self.device = device
 
-        conv_net = nature_cnn(env.observation_space)
+        self.conv_net = nature_cnn(env.observation_space)
 
-        self.net = nn.Sequential(conv_net, nn.Linear(512, self.num_actions))
+        self.net = nn.Sequential(self.conv_net, nn.Linear(512, self.num_actions))
 
     def forward(self, x):
         return self.net(x)
@@ -141,7 +141,7 @@ GAME_TO_PLAY = args.game_to_play
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print('device:', device)
 
-make_env = lambda: make_atari_deepmind(GAME_TO_PLAY, observe=True)
+make_env = lambda: make_atari_deepmind(GAME_TO_PLAY, observe=True, scale_values=True)
 
 vec_env = DummyVecEnv([make_env for _ in range(1)])
 
@@ -171,8 +171,9 @@ for t in itertools.count():
 
     obs, rew, done, _ = env.step(action)
     env.render(mode='rgb_array')
-    time.sleep(0.02)
+    time.sleep(0.001)
 
     if done[0]:
         obs = env.reset()
         beginning_episode = True
+        
