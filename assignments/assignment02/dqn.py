@@ -30,8 +30,8 @@ parser.add_argument('--network_type', default="vanilla", type=str)
 parser.add_argument('--buffer_size', default=float(1e4), type=float)
 parser.add_argument('--batch_size', default=32, type=int)
 parser.add_argument('--lr', default=5e-5, type=float)
-parser.add_argument('--save_dir', default="./atari_model_pack", type=str)
-parser.add_argument('--log_dir', default="./logs/atari_vanilla", type=str)
+parser.add_argument('--save_path', default="./atari_model.pack", type=str)
+parser.add_argument('--log_dir', default="./logs/atari_", type=str)
 parser.add_argument('--game_to_play', default="BreakoutNoFrameskip-v4", type=str)
 
 args = parser.parse_args()
@@ -46,15 +46,12 @@ EPSILON_DECAY = int(1e6)
 NUM_ENVS = 4
 TARGET_UPDATE_FREQ = 10000 // NUM_ENVS
 LR = args.lr
-SAVE_DIR = args.save_dir
+SAVE_PATH = args.save_path
 SAVE_INTERVAL = 10000
-LOG_DIR = args.log_dir
 LOG_INTERVAL = 1000 
 NETWORK_TYPE = args.network_type
 GAME_TO_PLAY = args.game_to_play
-
-if not os.path.exists(SAVE_DIR):
-    os.makedirs(SAVE_DIR)
+LOG_DIR = args.log_dir + GAME_TO_PLAY
 
 
 def nature_cnn(observation_space, depths=(32, 64, 64), final_layer=512):
@@ -348,8 +345,7 @@ for step in itertools.count():
 
     if step % SAVE_INTERVAL == 0 and step != 0:
         print("Saving...")
-        save_path = os.path.join(SAVE_DIR, f"model_step_{step}.pack")
-        online_net.save(save_path)
+        online_net.save(SAVE_PATH)
 
 
 
