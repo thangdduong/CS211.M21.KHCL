@@ -135,7 +135,12 @@ class Network(nn.Module):
         # Compute Targets
         # targets = r + gamma * target q vals * (1 - dones)
         with torch.no_grad():
-            if self.network_type == 'double':
+            if self.network_type == "vanilla":
+                target_q_values = target_net(new_obses_t)
+                max_target_q_values = target_q_values.max(dim=1, keepdim=True)[0]
+
+                targets = rews_t + GAMMA * (1 - dones_t) * max_target_q_values
+            else:
                 targets_online_q_values = self(new_obses_t)
                 targets_online_best_q_indices = targets_online_q_values.argmax(dim=1, keepdim=True)
 
@@ -143,11 +148,6 @@ class Network(nn.Module):
                 target_selected_q_values = torch.gather(input=targets_target_q_values, dim=1, index=targets_online_best_q_indices)
 
                 targets = rews_t + GAMMA * (1 - dones_t) * target_selected_q_values
-            else:
-                target_q_values = target_net(new_obses_t)
-                max_target_q_values = target_q_values.max(dim=1, keepdim=True)[0]
-
-                targets = rews_t + GAMMA * (1 - dones_t) * max_target_q_values
 
         # Compute Loss
         q_values = self(obses_t)
